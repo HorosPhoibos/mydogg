@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="id" data-theme="room">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>MYDOGG</title>
+  <meta name="description" content="Kitty, Jenges, Gemoy, Pompom, Mama, dan Bapak dalam wujud boneka rajut 3D. Elus, ajak main, dan jelajahi taman.">
+  <meta property="og:title" content="MYDOGG">
+  <meta property="og:description" content="Empat anjing rajut 3D yang bisa diajak main di browser.">
+  <meta property="og:image" content="photos/foto-2.jpg">
+  <meta name="theme-color" content="#0f5e58">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%231d8a7e'/%3E%3Cpath d='M5 13c7 4 15 4 22 0M4 19c8 4 16 4 24 0M10 4c3 8 3 16 0 24M21 4c-3 8-3 16 0 24' stroke='%23f5c518' stroke-width='1.8' fill='none'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Caprasimo&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three/three.module.min.js",
+        "three/addons/": "./vendor/three/addons/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="stage" aria-label="Keluarga boneka rajut. Ketuk anjing untuk menyapa, ketuk lantai untuk melempar bola atau mengajak jalan, gosok anjing untuk mengelus."></div>
+
+  <header class="top">
+    <h1 class="wordmark">MYDOGG</h1>
+    <div class="top-right">
+      <div id="themes" class="segments" role="group" aria-label="Suasana"></div>
+      <div class="top-actions">
+        <button id="do-photo" class="seg seg-hot" type="button">Foto keluarga</button>
+        <button id="do-party" class="seg seg-hot" type="button">Pesta</button>
+        <button id="open-photos" class="seg seg-solo" type="button">Foto asli</button>
+      </div>
+    </div>
+  </header>
+
+  <div id="dock" class="dock">
+    <nav id="dogs" class="dogs" aria-label="Pilih tokoh"></nav>
+  </div>
+
+  <aside id="panel" class="panel" aria-label="Kendali anjing">
+    <div class="panel-head">
+      <div>
+        <h2 id="dog-name">Kitty</h2>
+        <p id="dog-breed" class="breed"></p>
+      </div>
+      <button id="panel-toggle" class="link" type="button" aria-expanded="true" aria-controls="panel-body">Tutup</button>
+    </div>
+
+    <div id="panel-body" class="panel-body">
+      <p id="dog-about" class="about"></p>
+
+      <div class="for-dog">
+        <button id="do-pet" class="big big-wide" type="button">Elus dari dekat</button>
+        <div class="quick">
+          <button id="do-ball" class="big" type="button">Lempar bola</button>
+          <button id="do-treat" class="big" type="button">Kasih camilan</button>
+          <button id="do-bark" class="big" type="button">Gonggong</button>
+          <button id="do-talk" class="big" type="button" aria-pressed="false">Bicara</button>
+        </div>
+      </div>
+
+      <div class="tabs" role="tablist" aria-label="Isi panel">
+        <button role="tab" id="tab-acts" aria-selected="true" aria-controls="pane-acts" type="button">Tingkah</button>
+        <button role="tab" id="tab-wear" aria-selected="false" aria-controls="pane-wear" type="button">Baju</button>
+      </div>
+
+      <div id="pane-acts" role="tabpanel" aria-labelledby="tab-acts">
+        <div class="for-dog">
+          <div id="actions" class="chips"></div>
+          <h3>Wajah</h3>
+          <div id="faces" class="chips"></div>
+        </div>
+        <div class="for-person">
+          <h3 class="first">Perintah ke anjing</h3>
+          <div id="order-dogs" class="chips" role="group" aria-label="Pilih anjing"></div>
+          <div class="order-acts">
+            <button class="big" type="button" data-order="come">Datang</button>
+            <button class="big" type="button" data-order="sit">Duduk</button>
+            <button class="big" type="button" data-order="shake">Salaman</button>
+            <button class="big" type="button" data-order="bark">Gonggong</button>
+          </div>
+          <h3 id="person-self">Mama sendiri</h3>
+          <div class="chips">
+            <button class="chip" type="button" data-person-action="pet">Elus anjing</button>
+            <button class="chip" type="button" data-person-action="walk">Jalan</button>
+            <button class="chip" type="button" data-person-action="wave">Lambaikan tangan</button>
+            <button id="person-signature" class="chip" type="button" data-person-action="signature">Kasih jempol</button>
+            <button class="chip" type="button" data-person-action="dance">Joget</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="pane-wear" role="tabpanel" aria-labelledby="tab-wear" hidden></div>
+
+      <div class="switches">
+        <label><input id="roaming" type="checkbox" checked> Jalan-jalan sendiri</label>
+        <label><input id="closeup" type="checkbox"> Lihat dari dekat</label>
+        <label><input id="music" type="checkbox" checked> Musik</label>
+        <label><input id="sound" type="checkbox" checked> Suara</label>
+        <label><input id="chat" type="checkbox" checked> Gelembung obrolan</label>
+      </div>
+    </div>
+  </aside>
+
+  <div id="petbar" class="petbar">
+    <strong id="pet-name">Elus</strong>
+    <div id="pet-hearts" class="pet-hearts" role="img" aria-label="Tingkat senang"><i></i><i></i><i></i><i></i><i></i></div>
+    <button id="pet-done" class="big" type="button">Selesai</button>
+  </div>
+
+  <div id="countdown" class="countdown" aria-live="assertive"></div>
+  <div id="flash" class="flash"></div>
+  <div id="fade" class="fade"></div>
+  <div class="bye-bar" id="shot-bar"><span>Semua berkumpul. Lihat ke kamera!</span></div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <dialog id="photos" class="photos" aria-labelledby="photos-title">
+    <div class="photos-head">
+      <h2 id="photos-title">Anjing aslinya</h2>
+      <button id="close-photos" class="link" type="button">Tutup</button>
+    </div>
+    <div class="photo-row">
+      <figure>
+        <img src="photos/foto-2.jpg" alt="Kitty, Jenges, Gemoy, dan Pompom berjajar memakai kaus hijau, merah, biru, dan kalung lonceng." width="1280" height="960" loading="lazy">
+        <figcaption>
+          Kitty, Jenges, Gemoy, dan Pompom.
+          <button class="chip" data-look="foto2" type="button">Pakai baju foto ini</button>
+        </figcaption>
+      </figure>
+      <figure>
+        <img src="photos/foto-1.jpg" alt="Pompom berdiri dengan pita koala, Jenges bergaun pink, dan Kitty bergaun toska." width="900" height="1270" loading="lazy">
+        <figcaption>
+          Hari gaun rumbai.
+          <button class="chip" data-look="foto1" type="button">Pakai baju foto ini</button>
+        </figcaption>
+      </figure>
+    </div>
+  </dialog>
+
+  <dialog id="result" class="photos" aria-labelledby="result-title">
+    <div class="photos-head">
+      <h2 id="result-title">Foto keluarga</h2>
+      <button id="close-result" class="link" type="button">Tutup</button>
+    </div>
+    <img id="result-img" class="result-img" alt="Foto keluarga boneka rajut MYDOGG">
+    <div class="result-actions">
+      <a id="result-save" class="big big-link" download="foto-keluarga-mydogg.png">Simpan foto</a>
+      <button id="result-share" class="big" type="button" hidden>Bagikan</button>
+      <button id="result-again" class="big big-soft" type="button">Foto lagi</button>
+    </div>
+  </dialog>
+
+  <div id="intro" class="intro">
+    <div class="intro-card">
+      <h1 class="intro-title">MYDOGG</h1>
+      <p>Kitty, Jenges, Gemoy, Pompom, Mama, dan Bapak sudah menunggu di rumah benang mereka.</p>
+      <button id="intro-go" class="big big-wide intro-go" type="button" disabled>Sedang dirajut...</button>
+    </div>
+  </div>
+
+  <div id="no-webgl" class="no-webgl" hidden>
+    <h2>Grafis 3D tidak bisa dijalankan</h2>
+    <p>Browser atau perangkat ini belum mendukung WebGL. Coba buka lewat Chrome, Edge, Safari, atau Firefox terbaru.</p>
+  </div>
+
+  <noscript><p class="no-webgl">Situs ini butuh JavaScript untuk menampilkan anjing rajut.</p></noscript>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
