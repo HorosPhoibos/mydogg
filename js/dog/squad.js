@@ -43,6 +43,8 @@ export class Squad {
     this.ball = ball;
     this.audio = audio;
     this.autoRoam = true;
+    // Jeda antar zoomies berdua, supaya terasa spontan, bukan terus-terusan.
+    this.zoomieCooldown = 15;
     this.themeId = 'room';
     this.world = THEMES.room.world;
     this.obstacles = [];
@@ -235,7 +237,7 @@ export class Squad {
   /** Membersihkan semua penanda sementara sebelum aksi baru. */
   #interrupt(actor) {
     const b = actor.brain;
-    Object.assign(b, { then: null, chasing: false, arrive: 0, toSofa: false, barks: 0, loop: false, patDog: null, follow: null });
+    Object.assign(b, { then: null, chasing: false, arrive: 0, toSofa: false, barks: 0, loop: false, patDog: null, follow: null, followSpeed: 0 });
     actor.stepping = 0;
     // Sudah mendarat di sofa tetapi belum resmi duduk: jadikan duduk di kursi yang dipesan.
     if (actor.isDog && !b.seat && actor.position.y > 0.01) {
@@ -322,12 +324,7 @@ export class Squad {
 
   /** Semua anjing berlari ke tokoh ini, duduk melingkar di depannya, dan menghadapnya. */
   callDogs(person) {
-    const count = this.dogs.length;
-    this.dogs.forEach((dog, i) => {
-      const angle = person.yaw + (i - (count - 1) / 2) * 0.72;
-      const reach = person.radius + dog.radius + 0.28;
-      const x = clamp(person.position.x + Math.sin(angle) * reach, -this.world.walkX, this.world.walkX);
-      const z = clamp(person.position.z + Math.cos(angle) * reach, -this.world.walkZ, this.world.walkZ);
+    this.#formation(person, this.dogs).forEach(({ dog, x, z }) => {
       this.#takeOver(dog, () => {
         dog.brain.manual = true;
         this.#goTo(dog, x, z, dog.runSpeed, () => {
@@ -366,16 +363,90 @@ export class Squad {
     pb.timer = 8;
     person.setPose(action === 'come' ? 'wave' : action === 'shake' ? person.idlePose : 'point');
 
-    const count = dogs.length;
-    dogs.forEach((dog, i) => {
-      const angle = person.yaw + (i - (count - 1) / 2) * (count > 1 ? 0.72 : 0);
-      // Saat salaman jaraknya diukur dari panjang badan, supaya kaki depan pas di tangan.
-      const paws = (dog.breed.size.bodyLen * 0.45 + dog.m.fore * 0.68) * dog.scale;
-      const close = action === 'shake' && i === 0 ? paws + person.data.height * 0.2 : dog.radius + person.radius + 0.28;
-      const x = clamp(person.position.x + Math.sin(angle) * close, -this.world.walkX, this.world.walkX);
-      const z = clamp(person.position.z + Math.cos(angle) * close, -this.world.walkZ, this.world.walkZ);
+    // Anjing pertama yang salaman berdiri tepat di depan; yang lain duduk rapi di kiri-kanannya.
+    const shaker = action === 'shake' ? dogs[0] : null;
+    this.#formation(person, dogs, shaker).forEach(({ dog, x, z }) => {
+      const i = dogs.indexOf(dog);
+      if (dog === shaker) {
+        // Saat salaman jaraknya diukur dari panjang badan, supaya kaki depan pas di tangan.
+        const paws = (dog.breed.size.bodyLen * 0.45 + dog.m.fore * 0.68) * dog.scale;
+        const close = paws + person.data.height * 0.2;
+        x = clamp(person.position.x + Math.sin(person.yaw) * close, -this.world.walkX, this.world.walkX);
+        z = clamp(person.position.z + Math.cos(person.yaw) * close, -this.world.walkZ, this.world.walkZ);
+      }
       this.#takeOver(dog, () => this.#obey(person, dog, action, i, x, z));
     });
+  }
+
+  /**
+   * Tempat duduk melingkar di depan tokoh untuk beberapa anjing sekaligus.
+   * Jarak antar tempat dihitung dari lebar badan tiap anjing, urutan kiri-kanan mengikuti posisi
+   * anjing saat ini (supaya jalurnya tidak saling silang), dan tempat yang kena furnitur digeser.
+   * center: anjing yang harus mendapat tempat paling tengah (misalnya yang salaman).
+   */
+  #formation(person, dogs, center = null) {
+    const yaw = person.yaw;
+    const px = person.position.x;
+    const pz = person.position.z;
+    const side = (dog) => wrap(Math.atan2(dog.position.x - px, dog.position.z - pz) - yaw);
+    // Urut dari kanan tokoh ke kiri (sudut kecil ke besar), sama dengan urutan sudut tempat.
+    const order = dogs.filter((d) => d !== center).sort((a, b) => side(a) - side(b));
+    if (center) order.splice(Math.floor(order.length / 2), 0, center);
+
+    const GAP = 0.14;
+    const widest = Math.max(...order.map((d) => d.radius));
+    // Panjang busur yang dibutuhkan, lalu jari-jari dibesarkan kalau busurnya terlalu lebar.
+    const chords = order.slice(1).map((d, i) => order[i].radius + d.radius + GAP);
+    const arc = chords.reduce((a, b) => a + b, 0);
+    const reach = Math.max(person.radius + widest + 0.28, arc / 2.3);
+
+    const layout = (facing) => {
+      let angle = facing - arc / reach / 2;
+      const taken = [];
+      let misses = 0;
+      const spots = order.map((dog, i) => {
+        if (i > 0) angle += chords[i - 1] / reach;
+        const spot = this.#freeSpot(dog, px, pz, angle, reach, taken);
+        misses += spot.miss;
+        taken.push({ x: spot.x, z: spot.z, r: dog.radius });
+        return { dog, x: spot.x, z: spot.z };
+      });
+      return { spots, misses };
+    };
+    // Utamakan di depan tokoh. Kalau di depannya dinding atau furnitur (misalnya berdiri di pojok
+    // menghadap keluar), pindahkan lingkarannya ke sisi yang paling lapang, condong ke tengah ruangan.
+    const toCenter = Math.atan2(-px, -pz);
+    let best = null;
+    for (const facing of [yaw, toCenter, yaw + Math.PI / 2, yaw - Math.PI / 2, yaw + Math.PI]) {
+      const result = layout(facing);
+      if (!best || result.misses < best.misses) best = result;
+      if (best.misses === 0) break;
+    }
+    return best.spots;
+  }
+
+  /** Titik di busur sekitar (px, pz) yang tidak kena furnitur, dinding, atau tempat anjing lain. */
+  #freeSpot(dog, px, pz, angle, reach, taken) {
+    const { walkX, walkZ } = this.world;
+    const r = dog.radius;
+    const fits = (x, z) =>
+      Math.abs(x) <= walkX && Math.abs(z) <= walkZ &&
+      this.obstacles.every((o) => (o.x - x) ** 2 + (o.z - z) ** 2 > (o.r + r * 0.8) ** 2) &&
+      taken.every((t) => (t.x - x) ** 2 + (t.z - z) ** 2 > (t.r + r + 0.06) ** 2);
+    // Coba bergeser sedikit di sepanjang busur dan sedikit menjauh, dari yang paling dekat.
+    for (const grow of [0, 0.25, 0.5, 0.8]) {
+      for (const turn of [0, 0.18, -0.18, 0.36, -0.36, 0.6, -0.6]) {
+        const a = angle + turn;
+        const x = px + Math.sin(a) * (reach + grow);
+        const z = pz + Math.cos(a) * (reach + grow);
+        if (fits(x, z)) return { x, z, miss: grow > 0 || turn !== 0 ? 0.2 : 0 };
+      }
+    }
+    return {
+      x: clamp(px + Math.sin(angle) * reach, -walkX, walkX),
+      z: clamp(pz + Math.cos(angle) * reach, -walkZ, walkZ),
+      miss: 1,
+    };
   }
 
   /** Satu anjing menjalankan perintah Mama atau Bapak di titik (x, z). */
@@ -553,6 +624,110 @@ export class Squad {
     });
   }
 
+  /** Kitty dan Gemoy satu tim: kalau salah satunya mulai iseng, yang lain ikut. */
+  static ZOOMIE_TEAM = ['kitty', 'gemoy'];
+
+  /** Pasangan zoomies untuk anjing ini, kalau ia anggota tim dan temannya sedang bebas. */
+  zoomieBuddy(dog) {
+    if (!Squad.ZOOMIE_TEAM.includes(dog.id)) return null;
+    const buddy = this.dogs.find((d) => d !== dog && Squad.ZOOMIE_TEAM.includes(d.id));
+    if (!buddy || buddy === this.focus || buddy.isAngry) return null;
+    const busy = [MODE.HOP, MODE.EAT, MODE.PATTING, MODE.FOLLOW].includes(buddy.brain.mode) || buddy.brain.chasing;
+    return busy ? null : buddy;
+  }
+
+  /**
+   * Zoomies berdua: lari kencang ke mana-mana di seluruh dunia, satu dikejar satu mengejar,
+   * di tengah jalan gantian, lalu rebahan berdua sambil terengah. Mengembalikan true kalau jadi.
+   */
+  teamZoomies(dog) {
+    const buddy = this.zoomieBuddy(dog);
+    if (!buddy || this.locked) return false;
+    this.zoomieCooldown = 40;
+    const { walkX, walkZ } = this.world;
+    // Kecepatan disamakan dengan yang lebih lambat (Gemoy berkaki pendek), supaya bisa saling kejar.
+    const speed = Math.min(dog.runSpeed, buddy.runSpeed) * 2.1;
+
+    // Titik-titik jauh yang bebas furnitur, berselang-seling di seluruh ruangan.
+    const route = (from, count) => {
+      const points = [];
+      let last = from;
+      for (let k = 0; k < count; k++) {
+        let pick = null;
+        for (let attempt = 0; attempt < 30 && !pick; attempt++) {
+          const x = (Math.random() * 2 - 1) * (walkX - 0.3);
+          const z = (Math.random() * 2 - 1) * (walkZ - 0.3);
+          const far = Math.hypot(x - last.x, z - last.z) > Math.min(walkX, walkZ) * 0.9;
+          const clear = this.obstacles.every((o) => (o.x - x) ** 2 + (o.z - z) ** 2 > (o.r + 0.45) ** 2);
+          if (far && clear) pick = { x, z };
+        }
+        if (pick) {
+          points.push(pick);
+          last = pick;
+        }
+      }
+      return points;
+    };
+
+    const lead = (runner, chaser, points, then) => {
+      this.#takeOver(chaser, () => {
+        chaser.brain.manual = true;
+        chaser.brain.mode = MODE.FOLLOW;
+        chaser.brain.follow = runner;
+        chaser.brain.followSpeed = speed * 1.04;
+        chaser.setPose('walk');
+      });
+      this.#takeOver(runner, () => {
+        runner.brain.manual = true;
+        // Lewat saja di dekat tiap titik tanpa mengerem, seperti zoomies sungguhan.
+        runner.brain.arrive = 0.7;
+        const step = (i) => {
+          if (i >= points.length) {
+            runner.brain.arrive = 0;
+            then();
+            return;
+          }
+          this.#goTo(runner, points[i].x, points[i].z, speed, () => step(i + 1));
+        };
+        step(0);
+      });
+    };
+
+    const first = route(dog.position, 3);
+    const second = route(first[first.length - 1] ?? dog.position, 3);
+    this.say?.(dog, Math.random() < 0.5 ? 'Kejar aku!' : 'Wuuusss!', 1.8);
+    dog.express('happy');
+    lead(dog, buddy, first, () => {
+      // Gantian: yang tadi mengejar sekarang dikejar.
+      this.say?.(buddy, 'Gantian! Hihi', 1.8);
+      buddy.express('happy');
+      lead(buddy, dog, second, () => {
+        // Capek: rebahan berdua berdampingan.
+        [buddy, dog].forEach((d) => {
+          d.brain.follow = null;
+          d.brain.followSpeed = 0;
+        });
+        const side = buddy.yaw + Math.PI / 2;
+        const gap = buddy.radius + dog.radius + 0.08;
+        const x = clamp(buddy.position.x + Math.sin(side) * gap, -walkX, walkX);
+        const z = clamp(buddy.position.z + Math.cos(side) * gap, -walkZ, walkZ);
+        this.#rest(buddy, 'sploot', 10);
+        this.#takeOver(dog, () => {
+          dog.brain.manual = true;
+          this.#goTo(dog, x, z, dog.walkSpeed, () => {
+            this.#turnTo(dog, buddy.yaw, () => {
+              this.#rest(dog, 'sploot', 10);
+              this.say?.(dog, 'Capek tapi seru!', 2);
+              dog.express('happy');
+              buddy.express('happy');
+            });
+          });
+        });
+      });
+    });
+    return true;
+  }
+
   /** Anjing bermain sendiri: mendekati teman lalu mengendus, atau ikut tidur kalau temannya tidur. */
   #sniff(dog, buddy) {
     const side = buddy.yaw + (Math.random() < 0.5 ? 1 : -1) * Math.PI * 0.5;
@@ -674,6 +849,7 @@ export class Squad {
   }
 
   update(dt, time, lookPoint) {
+    this.zoomieCooldown -= dt;
     if (this.chase.active) {
       this.chase.timer -= dt;
       if (this.chase.timer <= 0) this.#endChase();
@@ -794,7 +970,16 @@ export class Squad {
     if (brain.mode === MODE.GO) {
       const arrived = this.#walk(actor, brain.target.x, brain.target.z, brain.topSpeed, brain.arrive || 0.14, dt);
       brain.timer -= dt;
-      if (arrived || brain.timer <= 0) {
+      // Sudah dekat tapi tidak maju lagi (terhalang teman): anggap sampai, jangan dorong-dorongan.
+      brain.checkTimer -= dt;
+      let blocked = false;
+      if (brain.checkTimer <= 0) {
+        const left = Math.hypot(brain.target.x - actor.position.x, brain.target.z - actor.position.z);
+        blocked = !brain.arrive && left < actor.radius + 0.45 && brain.checkLeft - left < 0.04;
+        brain.checkLeft = left;
+        brain.checkTimer = 0.5;
+      }
+      if (arrived || blocked || brain.timer <= 0) {
         actor.speed = 0;
         const then = brain.then;
         brain.then = null;
@@ -810,7 +995,7 @@ export class Squad {
         this.#rest(actor, actor.idlePose, 4);
         return;
       }
-      this.#walk(actor, leader.position.x, leader.position.z, actor.runSpeed * 1.15, leader.radius + actor.radius + 0.1, dt);
+      this.#walk(actor, leader.position.x, leader.position.z, brain.followSpeed || actor.runSpeed * 1.15, leader.radius + actor.radius + 0.1, dt);
       return;
     }
     if (brain.mode === MODE.PATTING) {
@@ -853,6 +1038,8 @@ export class Squad {
       brain.manual = false;
       if (!this.autoRoam || brain.mode !== MODE.REST) {
         brain.timer = 4;
+      } else if (this.zoomieCooldown <= 0 && Math.random() < 0.3 && this.teamZoomies(actor)) {
+        brain.manual = false;
       } else if (brain.seat) {
         this.#rest(actor, actor.isDog ? this.#pickSofaPose() : 'sofa', 7 + Math.random() * 5);
       } else {
@@ -866,6 +1053,9 @@ export class Squad {
       if (brain.mode === MODE.EAT) brain.mode = MODE.REST;
       if (!this.autoRoam) {
         brain.timer = 4;
+      } else if (actor.isDog && this.zoomieCooldown <= 0 && Math.random() < 0.35 && this.teamZoomies(actor)) {
+        // Kitty dan Gemoy tiba-tiba iseng lari-larian berdua.
+        brain.manual = false;
       } else if (brain.seat && Math.random() < 0.45) {
         // Kadang betah duduk di sofa lebih lama.
         this.#rest(actor, actor.isDog ? this.#pickSofaPose() : 'sofa', 10 + Math.random() * 8);
@@ -920,6 +1110,8 @@ export class Squad {
     b.then = then;
     b.mode = MODE.GO;
     b.timer = Math.hypot(x - actor.position.x, z - actor.position.z) / speed * 2 + 4;
+    b.checkTimer = 0.5;
+    b.checkLeft = Infinity;
     actor.stepping = 0;
     actor.setPose('walk');
   }

@@ -531,7 +531,8 @@ function start() {
   function secretTap(actor, count) {
     if (screen !== SCREEN.FREE) return false;
     if (actor.isDog && count === 5) {
-      squad.zoomies(actor);
+      // Kitty dan Gemoy satu tim: kalau temannya bebas, mereka lari-larian berdua.
+      if (!squad.teamZoomies(actor)) squad.zoomies(actor);
       sounds.whimper(actor.breed.voice);
       discover('zoomies');
       return true;
