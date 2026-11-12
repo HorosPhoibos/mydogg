@@ -4,15 +4,18 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/RoomEnvironment.js';
 import { createRoom, THEMES } from './world/room.js';
+import { loadRoomEnvironment } from './world/baked.js';
 import { createBall } from './world/ball.js';
 import { Squad } from './dog/squad.js';
-import { coreMaterial, setFuzz } from './yarn/material.js';
+import { coreMaterial, setFuzz, setYarnQuality } from './yarn/material.js';
 import { knitBall } from './yarn/loft.js';
 import { sounds, createVoiceRepeater, setMuted, createMusic } from './audio.js';
 import { createUI } from './ui.js';
 import { createFx } from './world/fx.js';
 import { createBubbles } from './bubbles.js';
 import { composePhoto } from './photo.js';
+import { EGGS, EGG_COUNT } from './eggs.js';
+import { createGames, GAMES } from './games.js';
 
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
 const stage = document.getElementById('stage');
@@ -31,6 +34,7 @@ function pickQuality() {
 
 function start() {
   const quality = pickQuality();
+  setYarnQuality(quality);
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
@@ -44,8 +48,16 @@ function start() {
 
   const scene = new THREE.Scene();
   const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  const studioEnv = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.environment = studioEnv;
   pmrem.dispose();
+  // Rumah memakai panorama ruangan hasil render Blender, supaya pantulannya cocok dengan isi rumah.
+  let roomEnv = null;
+  const pickEnvironment = () => (scene.environment = themeId === 'room' && roomEnv ? roomEnv : studioEnv);
+  loadRoomEnvironment(renderer, (env) => {
+    roomEnv = env;
+    pickEnvironment();
+  });
 
   const camera = new THREE.PerspectiveCamera(26, 1, 0.1, 120);
   const controls = new OrbitControls(camera, renderer.domElement);
@@ -101,6 +113,7 @@ function start() {
   squad.active = active;
   let closeUp = false;
   let themeId = 'room';
+  let worldData = null;
   let world = THEMES.room.world;
   let ui = null;
 
@@ -110,6 +123,42 @@ function start() {
   const tmp = new THREE.Vector3();
   const tmp2 = new THREE.Vector3();
   const viewInset = { right: 0, bottom: 0 };
+
+  /**
+   * Mode layar. Tepat satu yang aktif, dan tertulis di <html data-screen="...">:
+   *   free   bermain bebas
+   *   pet    mode Elus satu anjing (data di `pet`)
+   *   photo  Foto keluarga: berkumpul, hitung mundur, jepret (data di `shot`)
+   *   party  Pesta ulang tahun (data di `party`)
+   *   game   Permainan dari menu Main; jenisnya tertulis di <html data-game="..."> (lihat games.js)
+   * Perpindahan selalu lewat setScreen, dan keluar lewat exitScreen, supaya kamera, tokoh,
+   * musik, dan tampilan dari mode sebelumnya pasti dibereskan.
+   */
+  const SCREEN = Object.freeze({ FREE: 'free', PET: 'pet', PHOTO: 'photo', PARTY: 'party', GAME: 'game' });
+  const SCREEN_NAME = { pet: 'mode Elus', photo: 'Foto keluarga', party: 'pestanya', game: 'permainannya' };
+  let screen = SCREEN.FREE;
+
+  function setScreen(next, detail) {
+    screen = next;
+    document.documentElement.dataset.screen = next;
+    ui.setScreen(next, detail);
+  }
+
+  /** Kembali ke bermain bebas dari mode apa pun. */
+  function exitScreen() {
+    if (screen === SCREEN.PET) leavePet();
+    else if (screen === SCREEN.PHOTO) endPhoto();
+    else if (screen === SCREEN.PARTY) endParty();
+    else if (screen === SCREEN.GAME) games.stop();
+  }
+
+  /** Mode Elus boleh ditinggal kapan saja; foto dan pesta harus selesai dulu, dan pengguna diberi tahu. */
+  function canStart() {
+    if (screen === SCREEN.PET) leavePet();
+    if (screen === SCREEN.FREE) return true;
+    ui.say(`Tunggu ${SCREEN_NAME[screen]} selesai dulu.`, 2400);
+    return false;
+  }
 
   // Mode Elus: kamera menatap wajah anjing dari depan.
   let pet = null;
@@ -143,12 +192,12 @@ function start() {
   });
 
   function setTheme(id) {
-    if (pet) leavePet();
+    exitScreen();
     themeId = id;
     world = THEMES[id].world;
     const { light } = THEMES[id];
-    room.setTheme(id);
-    squad.setTheme(id);
+    worldData = room.setTheme(id);
+    squad.setTheme(id, worldData);
     fx.setTheme(id);
     hemi.color.set(light.hemiSky);
     hemi.groundColor.set(light.hemiGround);
@@ -158,6 +207,7 @@ function start() {
     rim.color.set(light.rim);
     rim.intensity = light.rimI;
     scene.environmentIntensity = light.env;
+    pickEnvironment();
     setFuzz(light.fuzz);
     setShadowArea(world.roomy ? 7 : 3.4);
     controls.maxDistance = world.roomy ? 34 : 24;
@@ -170,6 +220,26 @@ function start() {
   }
 
   function updateCamera(dt) {
+    const cinema = screen === SCREEN.GAME ? games.camera : null;
+    // Layar tegak (HP) lebih sempit, jadi kamera permainan mundur supaya semuanya tetap masuk.
+    const cinemaDistance = cinema ? cinema.distance / Math.min(1, camera.aspect * 1.35) : 0;
+    if (cinema?.view) {
+      // Pertunjukan: kamera menghadap panggung dari depan, seperti penonton.
+      const { azimuth, elevation } = cinema.view;
+      tmp.set(Math.sin(azimuth) * Math.cos(elevation), Math.sin(elevation), Math.cos(azimuth) * Math.cos(elevation));
+      tmp.multiplyScalar(cinemaDistance).add(cinema.target);
+      const k = 1 - Math.exp(-2.6 * dt);
+      controls.target.lerp(cinema.target, k);
+      camera.position.lerp(tmp, k);
+      controls.update();
+      return;
+    }
+    if (cinema) {
+      // Kamera mengikuti permainan, sudut putarnya tetap bisa diubah pengguna.
+      goalTarget.copy(cinema.target);
+      goalDistance = cinemaDistance;
+      zooming = true;
+    }
     if (shot) {
       goalTarget.set(shot.x, 0.68, shot.z);
       const d = Math.max(5.6, 1.85 / (0.231 * camera.aspect));
@@ -192,7 +262,9 @@ function start() {
       controls.update();
       return;
     }
-    if (closeUp || world.roomy) {
+    if (cinema) {
+      // Sasaran sudah diatur permainan.
+    } else if (closeUp || world.roomy) {
       active.chestWorld(goalTarget);
       goalTarget.y += !closeUp ? 0.12 : active.isDog ? 0.06 : 0.42;
     } else {
@@ -253,11 +325,12 @@ function start() {
     raycaster.setFromCamera(pointer, camera);
   }
 
-  function actorUnderPointer() {
+  /** Tokoh terdekat di bawah kursor. `only` menyaring tokoh mana yang boleh terkena. */
+  function actorUnderPointer(only = null) {
     let best = null;
     let bestDistance = Infinity;
     for (const [actor, meshes] of actorMeshes) {
-      if (!actor.root.visible) continue;
+      if (!actor.root.visible || (only && !only(actor))) continue;
       const hit = raycaster.intersectObjects(meshes, false)[0];
       if (hit && hit.distance < bestDistance) {
         best = actor;
@@ -356,7 +429,15 @@ function start() {
 
   canvas.addEventListener('pointerdown', (event) => {
     aim(event);
-    const actor = actorUnderPointer();
+    // Saat petak umpet, ketukan hanya mencari anjing, jadi Mama dan Bapak tidak menghalangi.
+    const actor = actorUnderPointer(screen === SCREEN.GAME && games.id === 'hide' ? (a) => a.isDog : null);
+    // Saat foto dan pesta tokoh sedang ditata, jadi ketukan di kanvas diabaikan (kamera tetap bisa diputar).
+    if (screen === SCREEN.PHOTO || screen === SCREEN.PARTY) {
+      press = null;
+      return;
+    }
+    // Tokoh yang disentuh langsung diam, supaya enak dielus atau diajak main.
+    if (actor && screen === SCREEN.FREE) squad.hold(actor);
     // Saat mengelus, kamera tidak ikut berputar.
     if (actor?.isDog || pet) controls.enableRotate = false;
     press = { actor, moved: 0, strokes: 0, x: event.clientX, y: event.clientY, time: performance.now() };
@@ -370,7 +451,15 @@ function start() {
     press = null;
     if (event.target !== canvas || travelled > 8 || performance.now() - time > 500 || strokes) return;
 
+    if (screen === SCREEN.GAME) {
+      if (actor) games.onActorTap(actor);
+      return;
+    }
     if (actor) {
+      // Ketuk berulang-ulang dengan cepat membuka rahasia tokoh.
+      const now = performance.now();
+      tapStreak = tapStreak.actor === actor && now - tapStreak.time < 650 ? { actor, count: tapStreak.count + 1, time: now } : { actor, count: 1, time: now };
+      if (secretTap(actor, tapStreak.count)) return;
       if (actor.isDog && (actor === active || pet) && isOnNose(actor, event)) {
         boopNose(actor);
         return;
@@ -391,13 +480,15 @@ function start() {
     }
     if (pet) return;
     aim(event);
+    // Benda di dunia yang bisa diketuk: TV, lampu, pohon, roket, dan lainnya.
+    const thing = room.pick(raycaster);
+    if (thing) {
+      thing.item.onTap(worldApi, thing.point);
+      discover(thing.item.id);
+      return;
+    }
     if (raycaster.ray.intersectPlane(floorPlane, floorHit) && Math.abs(floorHit.x) < world.halfX && Math.abs(floorHit.z) < world.halfZ) {
-      if (world.roomy) {
-        squad.walkTo(active, floorHit.x, floorHit.z);
-      } else {
-        squad.throwBall(floorHit.x, floorHit.z);
-        sounds.squeak();
-      }
+      squad.walkTo(active, floorHit.x, floorHit.z);
     }
   });
 
@@ -435,6 +526,73 @@ function start() {
     squad.steer.z = z / length;
   }
 
+  // Rahasia: ketuk anjing 5 kali cepat, atau Mama dan Bapak 3 kali cepat.
+  let tapStreak = { actor: null, count: 0, time: 0 };
+  function secretTap(actor, count) {
+    if (screen !== SCREEN.FREE) return false;
+    if (actor.isDog && count === 5) {
+      squad.zoomies(actor);
+      sounds.whimper(actor.breed.voice);
+      discover('zoomies');
+      return true;
+    }
+    if (actor.id === 'mama' && count === 3) {
+      squad.command(actor, 'wave');
+      squad.callDogs(actor);
+      bubbles.say(actor, 'Mama sayang kalian semua!', 3.5);
+      for (let i = 0; i < 12; i++) setTimeout(() => ui.heart(innerWidth * (0.2 + Math.random() * 0.6), innerHeight * (0.3 + Math.random() * 0.4)), i * 90);
+      discover('mama');
+      return true;
+    }
+    if (actor.id === 'bapak' && count === 3) {
+      squad.command(actor, 'cake');
+      squad.callDogs(actor);
+      bubbles.say(actor, 'Kejutan! Siapa mau kue?', 3.5);
+      fx.celebrate(4);
+      discover('bapak');
+      return true;
+    }
+    return false;
+  }
+
+  // Penghitung kejutan, disimpan di browser supaya tidak hilang saat halaman dibuka lagi.
+  const found = new Set();
+  try {
+    JSON.parse(localStorage.getItem('mydogg-kejutan') ?? '[]').forEach((id) => EGGS[id] && found.add(id));
+  } catch {
+    // Penyimpanan diblokir, penghitung tetap jalan untuk kunjungan ini saja.
+  }
+  function discover(id) {
+    if (!EGGS[id] || found.has(id)) return;
+    found.add(id);
+    try {
+      localStorage.setItem('mydogg-kejutan', JSON.stringify([...found]));
+    } catch {
+      // Abaikan: penghitung tetap jalan tanpa disimpan.
+    }
+    ui.setFound(found.size, EGG_COUNT);
+    if (found.size === EGG_COUNT) {
+      fx.celebrate(8);
+      sounds.birthday();
+      ui.say('Hebat! Semua kejutan sudah ketemu!', 6000);
+    } else {
+      ui.say(`Kejutan baru: ${EGGS[id]} (${found.size} dari ${EGG_COUNT})`, 3200);
+    }
+  }
+
+  const worldApi = {
+    sounds,
+    say: (text, hold) => ui.say(text, hold),
+    playWith: (toy) => {
+      if (!active.isDog) {
+        ui.say('Pilih salah satu anjing dulu, lalu ketuk mainannya.', 2600);
+        return;
+      }
+      squad.playWith(active, toy);
+    },
+    feedAtBowl: (x, z) => squad.feedAtBowl(x, z),
+  };
+
   // Camilan
   let treat = null;
   let treatTimer = 0;
@@ -454,9 +612,11 @@ function start() {
   });
 
   function selectActor(actor) {
-    if (pet) leavePet();
+    if (screen === SCREEN.PET) leavePet();
     active = actor;
     squad.active = actor;
+    document.documentElement.dataset.active = actor.id;
+    squad.hold(actor);
     ui.showActor(actor);
     if (closeUp) setCloseUp(true);
   }
@@ -476,7 +636,7 @@ function start() {
   }
 
   function enterPet() {
-    if (!active.isDog || pet || shot || party) return;
+    if (!active.isDog || screen === SCREEN.PET || !canStart()) return;
     const yaw = squad.enterPet(active, camera.position);
     pet = { dog: active, yaw, strokes: 0 };
     // Di mode ini yang paling bergerak adalah matanya, kepalanya hanya ikut sedikit.
@@ -486,11 +646,11 @@ function start() {
     // Selama mode ini hanya ada dia dan kamu, supaya wajahnya tidak tertutup yang lain.
     squad.actors.forEach((other) => (other.root.visible = other === active));
     if (ball.mesh.visible) ball.mesh.visible = false;
-    ui.setPetMode(active);
+    setScreen(SCREEN.PET, active);
   }
 
   function leavePet() {
-    if (!pet) return;
+    if (screen !== SCREEN.PET) return;
     pet.dog.headFollow = 1;
     pet = null;
     squad.leavePet();
@@ -498,7 +658,7 @@ function start() {
     unlockCamera(false);
     goalDistance = closeUp ? CLOSE_DISTANCE[active.isDog ? 'dog' : 'person'] : overviewDistance();
     zooming = true;
-    ui.setPetMode(null);
+    setScreen(SCREEN.FREE);
   }
 
   // Foto keluarga: semua berkumpul, hitung mundur, lalu jepret.
@@ -507,13 +667,12 @@ function start() {
   let shot = null;
   let captureNow = false;
 
-  const stagePoint = () => (world.roomy ? { x: -1.2, z: -0.4 } : { x: 0, z: 0.05 });
+  const stagePoint = () => worldData.stage;
 
   function takePhoto() {
-    if (shot || party) return;
-    leavePet();
+    if (!canStart()) return;
     const { x, z } = stagePoint();
-    ui.setShooting(true);
+    setScreen(SCREEN.PHOTO);
     unlockCamera(true);
     shot = { x, z, phase: 'gather', t: 0, count: 0 };
     squad.arrange(squad.actors.map((actor) => ({
@@ -558,11 +717,13 @@ function start() {
   }
 
   function endPhoto() {
-    if (!shot) return;
+    if (screen !== SCREEN.PHOTO) return;
     shot = null;
+    captureNow = false;
+    ui.countdown('');
     squad.release();
     unlockCamera(false);
-    ui.setShooting(false);
+    setScreen(SCREEN.FREE);
     goalDistance = closeUp ? CLOSE_DISTANCE[active.isDog ? 'dog' : 'person'] : overviewDistance();
     zooming = true;
   }
@@ -575,15 +736,14 @@ function start() {
   let party = null;
 
   function startParty() {
-    if (shot || party) return;
-    leavePet();
+    if (!canStart()) return;
     const { x, z } = stagePoint();
     party = { t: 0, length: 0, posed: false, hats: new Map() };
     squad.actors.forEach((actor) => {
       party.hats.set(actor, actor.wardrobe.state.head);
       actor.wardrobe.wear('head', 'party');
     });
-    ui.setPartying(true);
+    setScreen(SCREEN.PARTY);
     squad.arrange(squad.actors.map((actor) => {
       const [dx, dz, yaw, pose] = PARTY_SPOTS[actor.id];
       return { actor, x: x + dx, z: z + dz, yaw, pose, loop: actor.id === 'mama' };
@@ -603,18 +763,72 @@ function start() {
       bubbles.say(squad.byId('bapak'), 'Ayo makan kue!', 4);
       bubbles.say(squad.byId('jenges'), 'Guk guk guk!', 3);
     }
-    if (party.posed && party.t > party.length) {
-      party.hats.forEach((hat, actor) => actor.wardrobe.wear('head', hat));
-      party = null;
+    if (party.posed && party.t > party.length) endParty();
+  }
+
+  /** Mengakhiri pesta: topi dikembalikan, musik latar lanjut, semua bebas lagi. */
+  function endParty() {
+    if (screen !== SCREEN.PARTY) return;
+    party.hats.forEach((hat, actor) => actor.wardrobe.wear('head', hat));
+    party = null;
+    fx.stopCelebrate();
+    sounds.stopSong();
+    squad.release();
+    music.pause(false);
+    setScreen(SCREEN.FREE);
+    ui.showActor(active);
+  }
+
+  // Permainan dari menu Main
+  const games = createGames({
+    squad, sounds, bubbles, fx, scene, music,
+    get ui() {
+      return ui;
+    },
+    lights: { hemi, key, rim },
+    world: () => worldData,
+    bounds: () => world,
+    onEnd: () => {
       squad.release();
-      music.pause(false);
-      ui.setPartying(false);
+      delete document.documentElement.dataset.game;
+      setScreen(SCREEN.FREE);
+      goalDistance = closeUp ? CLOSE_DISTANCE[active.isDog ? 'dog' : 'person'] : overviewDistance();
+      zooming = true;
       ui.showActor(active);
+    },
+  });
+
+  function play(id) {
+    if (id === 'party') {
+      startParty();
+      return;
     }
+    if (!GAMES.some((g) => g.id === id) || !canStart()) return;
+    // Hujan hanya di taman.
+    if (id === 'rain' && themeId !== 'garden') {
+      setTheme('garden');
+      ui.syncTheme('garden');
+    }
+    document.documentElement.dataset.game = id;
+    setScreen(SCREEN.GAME, GAMES.find((g) => g.id === id));
+    games.start(id);
   }
 
   const app = {
     squad,
+    games: GAMES,
+    play,
+    stopGame: () => games.stop(),
+    chorus: () => {
+      squad.dogs.forEach((dog, i) => {
+        setTimeout(() => {
+          sounds.howl(dog.breed.voice);
+          dog.express('happy');
+          bubbles.say(dog, 'Auuuu~', 2);
+        }, i * 380);
+      });
+      discover('chorus');
+    },
     takePhoto,
     endPhoto,
     party: startParty,
@@ -640,7 +854,7 @@ function start() {
       });
       setTimeout(() => {
         bubbles.say(squad.byId('mama'), 'Halo, sini masuk!', 3);
-        ui.say('Pilih anjing lalu tekan Elus. Ketuk selimut untuk melempar bola.', 6000);
+        ui.say('Ketuk lantai untuk mengajak jalan. Ketuk TV atau mainan, dan coba suruh anjing naik sofa.', 6500);
       }, 1900);
     },
     themes: THEMES,
@@ -649,6 +863,12 @@ function start() {
     },
     select: (id) => selectActor(squad.byId(id)),
     command: (poseId) => {
+      if (poseId === 'sofa') {
+        const result = squad.climbSofa(active);
+        if (result === 'none') ui.say('Sofanya ada di Rumah.', 2400);
+        if (result === 'full') ui.say('Sofanya sudah penuh.', 2400);
+        return;
+      }
       squad.command(active, poseId);
       if (poseId === 'jump') sounds.whimper(active.breed.voice);
     },
@@ -657,7 +877,12 @@ function start() {
     applyLook: (key) => squad.applyLook(key),
     setTheme: (id) => {
       setTheme(id);
-      if (THEMES[id].world.roomy) ui.say('Taman ini luas. Ketuk rumput untuk mengajak jalan, atau pakai tombol panah.', 5500);
+      const tips = {
+        room: 'Ketuk TV untuk ganti saluran, ketuk mainan supaya anjing datang bermain.',
+        garden: 'Taman ini luas. Ketuk rumput untuk mengajak jalan, atau pakai tombol panah.',
+        night: 'Selamat datang di bulan! Di sini gravitasinya rendah, coba Lompat putar.',
+      };
+      ui.say(tips[id], 5500);
     },
     setRoaming: (value) => {
       squad.autoRoam = value;
@@ -700,6 +925,10 @@ function start() {
         sounds.hello();
         bubbles.say(person, 'Sini, semua!');
         ui.say(`${person.name} memanggil. Semua anjing datang!`);
+      } else if (id === 'sofa') {
+        const result = squad.climbSofa(person);
+        if (result === 'none') ui.say('Sofanya ada di Rumah.', 2400);
+        if (result === 'full') ui.say('Sofanya sudah penuh.', 2400);
       } else if (id === 'pet') {
         squad.petNearest(person);
       } else if (id === 'walk') {
@@ -728,6 +957,9 @@ function start() {
   };
 
   ui = createUI(app);
+  // Status yang bisa dibaca dari luar (tes otomatis, alat bantu, agen) tanpa membuka kode.
+  document.documentElement.dataset.screen = SCREEN.FREE;
+  document.documentElement.dataset.active = active.id;
   const skipIntro = location.search.includes('debug');
   setTheme(themeId);
   ui.showActor(active);
@@ -738,6 +970,8 @@ function start() {
 
   // Foto kecil Mama dan Bapak di tombol diambil dari boneka rajutnya sendiri, bukan foto asli.
   function snapshot(person) {
+    const source = renderer.domElement;
+    if (!source.width || !source.height) return false;
     const portrait = new THREE.PerspectiveCamera(20 / Math.min(1, camera.aspect), camera.aspect, 0.1, 10);
     person.update(0.016, 0);
     person.root.updateMatrixWorld(true);
@@ -749,7 +983,6 @@ function start() {
     others.forEach((a) => (a.root.visible = false));
     room.group.visible = false;
     renderer.render(scene, portrait);
-    const source = renderer.domElement;
     const size = Math.min(source.width, source.height);
     const crop = document.createElement('canvas');
     crop.width = crop.height = 160;
@@ -757,16 +990,43 @@ function start() {
     others.forEach((a) => (a.root.visible = true));
     room.group.visible = true;
     ui.setAvatar(person.id, crop.toDataURL('image/png'));
+    return true;
   }
-  squad.people.forEach(snapshot);
+  // Kalau layar belum punya ukuran (misalnya dibuka di tab latar belakang), coba lagi saat sudah tampil.
+  let avatarsReady = squad.people.every(snapshot);
 
   if (reducedMotion) squad.autoRoam = false;
   ui.syncRoaming(squad.autoRoam);
+  ui.setFound(found.size, EGG_COUNT);
   if (skipIntro) ui.skipIntro();
   else ui.ready();
 
   // Pemeriksaan performa: buka situs dengan ?debug
-  if (location.search.includes('debug')) window.mydogg = { app, renderer, camera, controls, squad, get pet() { return pet; } };
+  // Untuk pengujian dan agen: buka situs dengan ?debug. state() memberi gambaran lengkap yang mudah dibaca.
+  if (location.search.includes('debug')) {
+    window.mydogg = {
+      app, renderer, camera, controls, squad, scene, room,
+      get pet() {
+        return pet;
+      },
+      state: () => ({
+        screen,
+        game: games.id,
+        theme: themeId,
+        active: active.id,
+        closeUp,
+        found: found.size,
+        actors: squad.actors.map((a) => ({
+          id: a.id,
+          mode: a.brain.mode,
+          pose: a.poseName,
+          seat: Boolean(a.brain.seat),
+          queued: Boolean(a.brain.queued),
+          at: [+a.position.x.toFixed(2), +a.position.y.toFixed(2), +a.position.z.toFixed(2)],
+        })),
+      }),
+    };
+  }
 
   // Turunkan resolusi kalau perangkat kewalahan, supaya gerak tetap halus.
   let frameSum = 0;
@@ -788,14 +1048,14 @@ function start() {
   const clock = new THREE.Clock();
   let time = 0;
 
-  renderer.setAnimationLoop(() => {
-    const raw = clock.getDelta();
+  /** Satu langkah dunia. Putaran animasi memanggilnya setiap gambar; tes bisa memanggilnya langsung. */
+  function frame(raw) {
     const dt = Math.min(raw, 1 / 20);
     time += dt;
-    watchPerformance(raw);
 
-    if (shot) updateShot(dt);
-    if (party) updateParty(dt);
+    if (screen === SCREEN.PHOTO && shot) updateShot(dt);
+    if (screen === SCREEN.PARTY) updateParty(dt);
+    games.update(dt);
     lookPoint.lerp(lookGoal, 1 - Math.exp(-6 * dt));
     updateSteer();
     squad.update(dt, time, lookPoint);
@@ -816,11 +1076,34 @@ function start() {
     updateCamera(dt);
     room.update(time, camera.position, controls.target);
     updateShadowCenter();
-    fx.update(dt, time, active, controls.target, !pet && !shot && !party);
+    if (!avatarsReady) avatarsReady = squad.people.every(snapshot);
+    fx.update(dt, time, active, controls.target, screen === SCREEN.FREE);
     renderer.render(scene, camera);
-    if (captureNow) capture();
+    // Jepret menunggu sampai layar benar-benar tampil (misalnya setelah kembali dari aplikasi lain).
+    if (captureNow && renderer.domElement.width && renderer.domElement.height) capture();
     bubbles.update(dt, squad.actors);
+  }
+
+  // Satu error tidak boleh menghentikan putaran animasi, karena situs akan membeku selamanya.
+  let lastError = '';
+  renderer.setAnimationLoop(() => {
+    const raw = clock.getDelta();
+    watchPerformance(raw);
+    try {
+      frame(raw);
+    } catch (error) {
+      if (String(error) !== lastError) console.error(error);
+      lastError = String(error);
+    }
   });
+
+  // Mode debug: majukan waktu secara pasti, tanpa bergantung pada kecepatan layar.
+  if (window.mydogg) {
+    window.mydogg.step = (seconds = 1, fps = 30) => {
+      for (let i = 0; i < Math.round(seconds * fps); i++) frame(1 / fps);
+      return window.mydogg.state();
+    };
+  }
 }
 
 // Tunda sedikit supaya layar pembuka sempat tampil sebelum boneka dirajut.

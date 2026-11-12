@@ -32,6 +32,7 @@ export const BREEDS = [
   {
     id: 'jenges',
     name: 'Jenges',
+    scale: 0.82, // kata adik: Jenges terlalu besar
     breed: 'Toy poodle',
     about: 'Keriting cokelat kemerahan dengan telinga mengembang. Rapi kalau duduk, ribut kalau joget.',
     photo: 'photos/jenges.jpg',

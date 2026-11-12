@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { buildRig } from './rig.js';
 import { solveTwoBone, Spring } from './ik.js';
 import { Wardrobe } from './wardrobe.js';
+import { buildHelmet } from './accessories.js';
 import { POSES, EXPRESSIONS, createPoseState, blendPose } from './poses.js';
 
 const BLEND_TIME = 0.5;
@@ -24,7 +25,9 @@ export class Dog {
     this.favourites = breed.favourites;
     this.rig = buildRig(breed, quality);
     this.root = this.rig.root;
-    this.root.scale.setScalar(DOG_SCALE);
+    // Tiap ras boleh punya pengali ukuran sendiri (mis. Jenges lebih mungil).
+    const scale = DOG_SCALE * (breed.scale ?? 1);
+    this.root.scale.setScalar(scale);
     this.m = this.rig.measures;
     this.wardrobe = new Wardrobe(this.rig, breed, quality);
 
@@ -32,8 +35,8 @@ export class Dog {
     this.yaw = 0;
     this.speed = 0;
     this.stepping = 0;
-    this.radius = breed.size.bodyLen * 0.5 * DOG_SCALE + 0.1;
-    this.scale = DOG_SCALE;
+    this.radius = breed.size.bodyLen * 0.5 * scale + 0.1;
+    this.scale = scale;
     this.walkSpeed = 0.42 * (0.8 + this.m.fore * 0.9);
     this.runSpeed = 0.95 * (0.7 + this.m.fore);
 
@@ -120,6 +123,17 @@ export class Dog {
     return count;
   }
 
+  /** Helm astronaut untuk dunia bulan. */
+  setHelmet(on) {
+    if (on && !this.helmet) {
+      const [hx, hy, hz] = this.breed.size.head;
+      const upright = this.breed.ear.type === 'upright';
+      const radius = Math.max(hx, hy, hz + this.breed.size.snoutLen * 0.55) * 1.45 + (upright ? 0.06 : 0);
+      this.helmet = buildHelmet(this.rig.head, radius, new THREE.Vector3(0, upright ? 0.05 : 0.01, hz * 0.25));
+    }
+    if (this.helmet) this.helmet.visible = on;
+  }
+
   /** Telinga bergoyang saat kepala diusap. */
   tickle() {
     this.earSprings[0].v += 3.5;
@@ -135,7 +149,7 @@ export class Dog {
       if (this.noseTimer <= 0) this.nosePresses = 0;
     }
 
-    this.gait = (this.gait + ((this.speed / DOG_SCALE + this.stepping) * dt) / (this.stride * 4)) % 1;
+    this.gait = (this.gait + ((this.speed / this.scale + this.stepping) * dt) / (this.stride * 4)) % 1;
     this.ctx.gait = this.gait;
 
     POSES[this.poseName].fn(this.b, this.m, this.poseTime, this.ctx);

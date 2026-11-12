@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { Loft, coreMesh, knit, knitBall } from '../yarn/loft.js';
 import { joint, createEye } from '../dog/rig.js';
 import { solveTwoBone, Spring } from '../dog/ik.js';
-import { HEADWEAR, EYEWEAR, piece, buildHat, buildGlasses, beadRing } from '../dog/accessories.js';
+import { HEADWEAR, EYEWEAR, piece, buildHat, buildGlasses, beadRing, buildHelmet } from '../dog/accessories.js';
 
 export const PEOPLE = [
   {
@@ -227,6 +227,53 @@ const POSES = {
       o.lookWeight = 0.5;
     },
   },
+  // Duduk di sofa seperti boneka: paha rata di atas bantal, lutut di tepi, kaki menggantung
+  // dan sesekali berayun pelan. ctx.seatY adalah tinggi permukaan bantal.
+  sofa: {
+    fn(o, m, t, ctx) {
+      base(o, m, t);
+      // Pinggul = permukaan bantal + tebal paha (0.058) + jarak sendi paha ke pinggul (0.015).
+      o.y = (ctx.seatY ?? 0.3) + 0.073;
+      o.lean = -0.16;
+      o.hp = 0.06;
+      const sway = Math.sin(t * 1.7) * 0.018;
+      o.lx = -m.footX - 0.012;
+      o.rx = m.footX + 0.012;
+      o.ly = o.y - 0.26;
+      o.ry = o.y - 0.26;
+      o.lz = 0.23 + sway;
+      o.rz = 0.23 - sway;
+      o.lf = 0.55;
+      o.rf = 0.55;
+      o.la = 0.1;
+      o.ra = 0.1;
+      o.le = 0.55;
+      o.re = 0.55;
+    },
+  },
+  clap: {
+    fn(o, m, t) {
+      base(o, m, t);
+      const clap = Math.abs(Math.sin(t * 7));
+      o.lf = 0.95;
+      o.rf = 0.95;
+      o.la = 0.12 - clap * 0.22;
+      o.ra = 0.12 - clap * 0.22;
+      o.le = 0.85;
+      o.re = 0.85;
+      o.y += Math.abs(Math.sin(t * 3.5)) * 0.008;
+      o.hp = 0.08;
+    },
+  },
+  umbrella: {
+    fn(o, m, t) {
+      base(o, m, t);
+      o.rf = 0.62;
+      o.ra = 0.22;
+      o.re = 1.25;
+      o.hp = 0.06 + Math.sin(t * 1.4) * 0.02;
+    },
+  },
   point: {
     duration: 2.4,
     fn(o, m, t) {
@@ -337,6 +384,31 @@ export class Person {
   }
 
   express() {}
+
+  /** Payung rajut belang-belang untuk permainan Hujan. */
+  setUmbrella(on) {
+    if (on && !this.umbrella) {
+      const group = joint(this.torso, 0.1, 0.62, 0.12);
+      const colors = [0xd9403b, 0xf5c518, 0x1d8a7e, 0xf0aeb4];
+      const canopy = new Loft([
+        { p: [0, 0.06, 0], rx: 0.36 },
+        { p: [0, 0.16, 0], rx: 0.24 },
+        { p: [0, 0.24, 0], rx: 0.04 },
+      ], { capStart: 0, capEnd: 0.8, side: [1, 0, 0], bump: (s, a) => Math.abs(Math.sin(a * 4)) * 0.06 * (1 - s) });
+      piece(group, canopy, ({ a }) => colors[Math.floor(((a + Math.PI * 2) % (Math.PI * 2)) / (Math.PI / 2)) % 4], this.quality, { w: 0.03, h: 0.026, depth: 0.016 });
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.5, 6), new THREE.MeshStandardMaterial({ color: 0x5e3218, roughness: 0.6 }));
+      pole.position.y = -0.04;
+      group.add(pole);
+      this.umbrella = group;
+    }
+    if (this.umbrella) this.umbrella.visible = on;
+  }
+
+  /** Helm astronaut untuk dunia bulan. */
+  setHelmet(on) {
+    if (on && !this.helmet) this.helmet = buildHelmet(this.head, 0.27, new THREE.Vector3(0, 0.02, 0.01));
+    if (this.helmet) this.helmet.visible = on;
+  }
 
   get poseFinished() {
     const duration = POSES[this.poseName].duration;

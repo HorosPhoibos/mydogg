@@ -32,7 +32,7 @@
       <div id="themes" class="segments" role="group" aria-label="Suasana"></div>
       <div class="top-actions">
         <button id="do-photo" class="seg seg-hot" type="button">Foto keluarga</button>
-        <button id="do-party" class="seg seg-hot" type="button">Pesta</button>
+        <button id="do-games" class="seg seg-hot" type="button">Main</button>
         <button id="open-photos" class="seg seg-solo" type="button">Foto asli</button>
       </div>
     </div>
@@ -87,6 +87,7 @@
           <h3 id="person-self">Mama sendiri</h3>
           <div class="chips">
             <button class="chip" type="button" data-person-action="pet">Elus anjing</button>
+            <button class="chip" type="button" data-person-action="sofa">Duduk di sofa</button>
             <button class="chip" type="button" data-person-action="walk">Jalan</button>
             <button class="chip" type="button" data-person-action="wave">Lambaikan tangan</button>
             <button id="person-signature" class="chip" type="button" data-person-action="signature">Kasih jempol</button>
@@ -97,8 +98,14 @@
 
       <div id="pane-wear" role="tabpanel" aria-labelledby="tab-wear" hidden></div>
 
+      <div class="egg-hunt">
+        <p id="eggs">Kejutan ditemukan: 0</p>
+        <div class="egg-track"><div id="eggs-bar" class="egg-bar"></div></div>
+        <p class="egg-hint">Coba ketuk benda-benda di sekitar: pohon, TV, lampu, boneka, roket. Ada juga rahasia kalau tokoh diketuk berkali-kali.</p>
+      </div>
+
       <div class="switches">
-        <label><input id="roaming" type="checkbox" checked> Jalan-jalan sendiri</label>
+        <label><input id="roaming" type="checkbox" checked> Yang lain jalan-jalan sendiri</label>
         <label><input id="closeup" type="checkbox"> Lihat dari dekat</label>
         <label><input id="music" type="checkbox" checked> Musik</label>
         <label><input id="sound" type="checkbox" checked> Suara</label>
@@ -116,6 +123,11 @@
   <div id="countdown" class="countdown" aria-live="assertive"></div>
   <div id="flash" class="flash"></div>
   <div id="fade" class="fade"></div>
+  <div id="gamebar" class="gamebar">
+    <span id="game-text"></span>
+    <button id="game-stop" class="big big-soft" type="button">Berhenti</button>
+  </div>
+
   <div class="bye-bar" id="shot-bar"><span>Semua berkumpul. Lihat ke kamera!</span></div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -154,6 +166,14 @@
       <button id="result-share" class="big" type="button" hidden>Bagikan</button>
       <button id="result-again" class="big big-soft" type="button">Foto lagi</button>
     </div>
+  </dialog>
+
+  <dialog id="games" class="photos games-dialog" aria-labelledby="games-title">
+    <div class="photos-head">
+      <h2 id="games-title">Mau main apa?</h2>
+      <button id="close-games" class="link" type="button">Tutup</button>
+    </div>
+    <div id="game-list" class="game-list"></div>
   </dialog>
 
   <div id="intro" class="intro">

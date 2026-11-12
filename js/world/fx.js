@@ -158,6 +158,10 @@ export function createFx(scene) {
       if (id === 'garden' && !garden) garden = buildGarden();
       if (garden) garden.group.visible = id === 'garden';
     },
+    /** Hentikan konfeti lebih awal; yang masih melayang tetap jatuh sampai habis. */
+    stopCelebrate() {
+      confettiTime = Math.min(confettiTime, 2.2);
+    },
     celebrate(seconds = 8) {
       confettiTime = seconds;
       confetti.mesh.visible = true;
@@ -168,6 +172,7 @@ export function createFx(scene) {
       if (ring.visible) {
         const size = (active.isDog ? active.radius * 1.28 : active.radius * 1.5) * (1 + Math.sin(time * 3) * 0.03);
         ring.position.x = active.position.x;
+        ring.position.y = active.position.y + 0.035;
         ring.position.z = active.position.z;
         ring.rotation.y = time * 0.35;
         ring.scale.set(size, 1, size);

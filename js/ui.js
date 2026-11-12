@@ -13,6 +13,7 @@ const ACTIONS = [
   { id: 'roll', label: 'Guling' },
   { id: 'jump', label: 'Lompat putar' },
   { id: 'sleep', label: 'Tidur' },
+  { id: 'sofa', label: 'Naik sofa' },
 ];
 
 const FACES = [
@@ -189,9 +190,27 @@ export function createUI(app) {
   // Mode Elus
   $('#pet-done').addEventListener('click', () => app.leavePet());
 
-  // Foto keluarga dan pesta
+  // Foto keluarga dan menu Main
   $('#do-photo').addEventListener('click', () => app.takePhoto());
-  $('#do-party').addEventListener('click', () => app.party());
+  const gamesDialog = $('#games');
+  const gameList = $('#game-list');
+  app.games.forEach((game) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'game-card';
+    button.innerHTML = `<strong>${game.label}</strong><span>${game.about}</span>`;
+    button.addEventListener('click', () => {
+      gamesDialog.close();
+      app.play(game.id);
+    });
+    gameList.appendChild(button);
+  });
+  $('#do-games').addEventListener('click', () => gamesDialog.showModal());
+  $('#close-games').addEventListener('click', () => gamesDialog.close());
+  gamesDialog.addEventListener('click', (event) => {
+    if (event.target === gamesDialog) gamesDialog.close();
+  });
+  $('#game-stop').addEventListener('click', () => app.stopGame());
   const result = $('#result');
   let resultBlob = null;
   $('#close-result').addEventListener('click', () => result.close());
@@ -210,6 +229,9 @@ export function createUI(app) {
     }
   });
 
+  // Rahasia: ketuk tulisan MYDOGG
+  $('.wordmark').addEventListener('click', () => app.chorus());
+
   // Suara dan obrolan
   $('#music').addEventListener('change', (e) => app.setMusic(e.target.checked));
   $('#sound').addEventListener('change', (e) => app.setSound(e.target.checked));
@@ -223,14 +245,15 @@ export function createUI(app) {
 
   // Buka tutup panel
   const toggle = $('#panel-toggle');
+  let shownScreen = 'free';
   function measureInset() {
     const open = !panel.classList.contains('is-closed');
     const dock = $('#dock');
-    if (document.body.classList.contains('is-petting')) {
+    if (shownScreen === 'pet') {
       app.setPanelInset(0, isNarrow() ? 90 : 0);
       return;
     }
-    if (document.body.classList.contains('is-shooting') || document.body.classList.contains('is-partying')) {
+    if (shownScreen === 'photo' || shownScreen === 'party' || shownScreen === 'game') {
       app.setPanelInset(0, 0);
       return;
     }
@@ -300,14 +323,6 @@ export function createUI(app) {
     skipIntro() {
       $('#intro').remove();
     },
-    setShooting(on) {
-      document.body.classList.toggle('is-shooting', on);
-      measureInset();
-    },
-    setPartying(on) {
-      document.body.classList.toggle('is-partying', on);
-      measureInset();
-    },
     countdown(value) {
       $('#countdown').textContent = value;
     },
@@ -349,20 +364,41 @@ export function createUI(app) {
     syncRoaming(value) {
       roaming.checked = value;
     },
+    /** Bar status permainan di bawah layar. null menyembunyikannya. */
+    gameBar(text) {
+      $('#game-text').textContent = text ?? '';
+    },
+    /** Layar menutup sebentar, fn dijalankan saat tertutup, lalu membuka lagi. */
+    blink(fn) {
+      const fade = $('#fade');
+      fade.classList.add('is-on');
+      setTimeout(() => {
+        fn();
+        setTimeout(() => fade.classList.remove('is-on'), 120);
+      }, 320);
+    },
+    syncTheme(id) {
+      themeBar.querySelectorAll('.seg').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.scene === id)));
+    },
+    setFound(count, total) {
+      $('#eggs').textContent = `Kejutan ditemukan: ${count} dari ${total}`;
+      $('#eggs-bar').style.width = `${(count / total) * 100}%`;
+    },
     setAvatar(id, url) {
       const img = dogBar.querySelector(`[data-actor="${id}"] img`);
       img.src = url;
       img.classList.add('is-knit');
     },
-    setPetMode(dog) {
-      document.body.classList.toggle('is-petting', Boolean(dog));
-      if (dog) {
+    /** Dipanggil main.js setiap mode layar berganti. Mode sendiri tertulis di <html data-screen>. */
+    setScreen(name, dog) {
+      if (name === 'pet') {
         $('#pet-name').textContent = `Elus ${dog.name}`;
         hearts.forEach((h) => h.classList.remove('is-full'));
         say('Gosok untuk mengelus. Matanya mengikuti kursor. Awas, jangan pencet hidungnya 3 kali.', 6000);
-      } else {
+      } else if (shownScreen === 'pet') {
         toast.classList.remove('is-on');
       }
+      shownScreen = name;
       measureInset();
     },
     setPetHearts(count) {

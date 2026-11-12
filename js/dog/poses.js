@@ -136,6 +136,7 @@ function poseWalk(o, m, t, ctx) {
   o.ear = -beat * 0.12;
   o.jaw = 0.28 + Math.sin(t * 11) * 0.05;
   o.lookWeight = 0.35;
+  if (ctx.float) o.hop = Math.abs(Math.sin(phase * Math.PI * 2)) * 0.09;
 }
 
 function poseSploot(o, m, t) {
@@ -258,12 +259,13 @@ function poseRoll(o, m, t) {
   o.lookWeight = 0;
 }
 
-function poseJump(o, m, t) {
+function poseJump(o, m, t, ctx) {
   base(o, m, t);
   const crouch = smooth(0, 0.28, t) * (1 - smooth(0.28, 0.42, t));
   const land = smooth(1.08, 1.2, t) * (1 - smooth(1.2, 1.6, t));
   const air = clamp((t - 0.36) / 0.76, 0, 1);
-  const height = 0.34 + m.hind * 0.5;
+  // Di bulan gravitasinya rendah, jadi lompatannya jauh lebih tinggi.
+  const height = (0.34 + m.hind * 0.5) * (ctx?.float ? 2.6 : 1);
   o.y -= (crouch + land) * m.hind * 0.26;
   o.hop = t > 0.36 && t < 1.12 ? 4 * air * (1 - air) * height : 0;
   o.spin = smooth(0.36, 1.12, t) * Math.PI * 2;
@@ -312,6 +314,22 @@ function poseAngry(o, m, t) {
   o.fr[0] += 0.012;
 }
 
+// Melayang saat melompat naik atau turun sofa: kaki depan menjulur, kaki belakang terlipat.
+function poseLeap(o, m, t) {
+  base(o, m, t);
+  o.pitch += 0.12;
+  o.fl[2] += m.fore * 0.5;
+  o.fr[2] += m.fore * 0.5;
+  o.fl[1] = o.fr[1] = m.fore * 0.25;
+  o.hl[2] -= m.hind * 0.35;
+  o.hr[2] -= m.hind * 0.35;
+  o.hl[1] = o.hr[1] = m.hind * 0.2;
+  o.tailLift = 0.8;
+  o.ear = -0.6;
+  o.jaw = 0.4;
+  o.lookWeight = 0;
+}
+
 export const POSES = {
   stand: { fn: poseStand },
   walk: { fn: poseWalk },
@@ -325,10 +343,13 @@ export const POSES = {
   jump: { fn: poseJump, duration: 1.65 },
   eat: { fn: poseEat, duration: 1.8 },
   angry: { fn: poseAngry, duration: 3.2 },
+  leap: { fn: poseLeap },
 };
 
 // Tampilan singkat di wajah, ditumpuk di atas pose apa pun.
 export const EXPRESSIONS = {
+  // Mengibaskan badan setelah kehujanan: badan bergoyang cepat dari kepala sampai ekor.
+  shakeOff: { duration: 1.3, apply: (o, e, t) => { o.roll += Math.sin(t * 34) * 0.32 * e; o.headYaw += Math.sin(t * 34 + 0.6) * 0.5 * e; o.ear += Math.sin(t * 34) * 0.9 * e; o.tailWag = Math.sin(t * 34) * 0.9 * e; o.eyeL *= 1 - 0.8 * e; o.eyeR *= 1 - 0.8 * e; } },
   boop: { duration: 0.55, apply: (o, e) => { o.eyeL *= 1 - 0.75 * e; o.eyeR *= 1 - 0.75 * e; o.look += 0.1 * e; o.ear -= 0.2 * e; } },
   annoyed: { duration: 1.3, apply: (o, e, t) => { o.brow += 0.6 * e; o.headYaw += Math.sin(t * 15) * 0.1 * e; o.jaw += 0.14 * e; o.tailWag *= 1 - e; } },
   sulk: { duration: 2.8, apply: (o, e) => { o.headYaw += 0.75 * e; o.look += 0.14 * e; o.brow += 0.55 * e; o.eyeL *= 1 - 0.45 * e; o.eyeR *= 1 - 0.45 * e; o.tailWag *= 1 - e; o.lookWeight *= 1 - e; } },

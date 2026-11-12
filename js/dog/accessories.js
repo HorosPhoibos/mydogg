@@ -237,6 +237,30 @@ export function buildGlasses(id, parent, eyes, eyeR) {
   return group;
 }
 
+/** Helm astronaut: gelembung bening dengan cincin di bawahnya. */
+export function buildHelmet(parent, radius, center) {
+  const group = new THREE.Group();
+  group.position.copy(center);
+  const glass = new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 32, 24),
+    new THREE.MeshPhysicalMaterial({ color: 0xe6f6ff, roughness: 0.05, clearcoat: 1, transparent: true, opacity: 0.24, depthWrite: false }),
+  );
+  glass.renderOrder = 2;
+  group.add(glass);
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(radius * 0.74, radius * 0.06, 8, 36),
+    new THREE.MeshStandardMaterial({ color: 0xf2f2f6, roughness: 0.45, metalness: 0.2 }),
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = -radius * 0.68;
+  group.add(ring);
+  const shine = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.12, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 }));
+  shine.position.set(-radius * 0.45, radius * 0.5, radius * 0.6);
+  group.add(shine);
+  parent.add(group);
+  return group;
+}
+
 /** Kalung manik mengelilingi sumbu tertentu. */
 export function beadRing(parent, center, axis, radius, count, beadRadius, material, sizeAt = null) {
   const mesh = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 12, 10), material, count);

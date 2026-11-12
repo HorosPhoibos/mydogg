@@ -50,6 +50,7 @@ function tone({ type = 'sine', from, to, start = 0, duration, gain = 0.2, filter
   amp.connect(output(ctx));
   osc.start(t0);
   osc.stop(t0 + duration + 0.02);
+  return osc;
 }
 
 function noiseBurst({ start = 0, duration = 0.06, gain = 0.2, frequency = 2400 }) {
@@ -71,6 +72,8 @@ function noiseBurst({ start = 0, duration = 0.06, gain = 0.2, frequency = 2400 }
   amp.connect(output(ctx));
   source.start(t0);
 }
+
+const songNotes = [];
 
 // Nada untuk melodi. C4 = 261,63 Hz.
 const note = (semitones) => 261.63 * Math.pow(2, semitones / 12);
@@ -94,11 +97,21 @@ export const sounds = {
     const beat = 0.34;
     let start = 0;
     song.forEach(([pitch, length]) => {
-      tone({ type: 'triangle', from: note(pitch), to: note(pitch), start, duration: Math.max(length * beat * 1.2, 0.26), gain: 0.14 });
-      tone({ type: 'sine', from: note(pitch + 12), to: note(pitch + 12), start, duration: 0.2, gain: 0.03 });
+      songNotes.push(tone({ type: 'triangle', from: note(pitch), to: note(pitch), start, duration: Math.max(length * beat * 1.2, 0.26), gain: 0.14 }));
+      songNotes.push(tone({ type: 'sine', from: note(pitch + 12), to: note(pitch + 12), start, duration: 0.2, gain: 0.03 }));
       start += length * beat;
     });
     return start;
+  },
+  /** Menghentikan lagu ulang tahun yang masih berjalan, misalnya saat pesta diakhiri lebih awal. */
+  stopSong() {
+    songNotes.splice(0).forEach((osc) => {
+      try {
+        osc?.stop();
+      } catch {
+        // Nada yang sudah selesai tidak perlu dihentikan.
+      }
+    });
   },
 
   bark(pitch = 1.3) {
@@ -130,6 +143,90 @@ export const sounds = {
       tone({ type: 'sawtooth', from: 560 * pitch, to: 200 * pitch, start, duration: 0.17, gain: 0.3, filter: 860 * pitch, filterQ: 1.1 });
       noiseBurst({ start, duration: 0.06, gain: 0.14, frequency: 1500 * pitch });
     });
+  },
+  click() {
+    tone({ type: 'square', from: 1400, to: 900, duration: 0.03, gain: 0.05 });
+  },
+  pop() {
+    tone({ type: 'sine', from: 320, to: 980, duration: 0.12, gain: 0.14 });
+  },
+  boing() {
+    tone({ type: 'sine', from: 180, to: 520, duration: 0.18, gain: 0.14 });
+    tone({ type: 'sine', from: 520, to: 260, start: 0.16, duration: 0.22, gain: 0.08 });
+  },
+  quack() {
+    [0, 0.2].forEach((start) => tone({ type: 'sawtooth', from: 520, to: 340, start, duration: 0.14, gain: 0.12, filter: 900, filterQ: 3 }));
+  },
+  chirp() {
+    [0, 0.12, 0.24].forEach((start, i) => tone({ type: 'sine', from: 2200 + i * 200, to: 3400, start, duration: 0.07, gain: 0.05 }));
+  },
+  splash() {
+    noiseBurst({ duration: 0.3, gain: 0.2, frequency: 1300 });
+    noiseBurst({ start: 0.1, duration: 0.25, gain: 0.12, frequency: 2600 });
+  },
+  rumble() {
+    for (let i = 0; i < 10; i++) noiseBurst({ start: i * 0.18, duration: 0.24, gain: 0.16 - i * 0.012, frequency: 220 + i * 40 });
+  },
+  rustle() {
+    for (let i = 0; i < 4; i++) noiseBurst({ start: i * 0.07, duration: 0.08, gain: 0.08, frequency: 3800 });
+  },
+  howl(pitch = 1.3, start = 0) {
+    tone({ type: 'triangle', from: 380 * pitch, to: 620 * pitch, start, duration: 0.5, gain: 0.1 });
+    tone({ type: 'triangle', from: 620 * pitch, to: 420 * pitch, start: start + 0.48, duration: 0.7, gain: 0.08 });
+  },
+  applause(seconds = 2) {
+    for (let i = 0; i < seconds * 18; i++) noiseBurst({ start: i / 18 + Math.random() * 0.04, duration: 0.03, gain: 0.05 + Math.random() * 0.05, frequency: 1800 + Math.random() * 1600 });
+  },
+  /** Ketukan disko berulang. Mengembalikan fungsi untuk menghentikannya. */
+  disco(seconds = 14) {
+    const notes = [];
+    const beat = 0.42;
+    const bass = [0, 0, 7, 5];
+    for (let i = 0; i * beat < seconds; i++) {
+      notes.push(tone({ type: 'sine', from: 150, to: 50, start: i * beat, duration: 0.18, gain: 0.32 }));
+      noiseBurst({ start: i * beat + beat / 2, duration: 0.04, gain: 0.07, frequency: 7000 });
+      const pitch = bass[Math.floor(i / 2) % bass.length] - 12;
+      notes.push(tone({ type: 'triangle', from: note(pitch), to: note(pitch), start: i * beat + beat / 2, duration: 0.22, gain: 0.1 }));
+      if (i % 2 === 0) notes.push(tone({ type: 'square', from: note(pitch + 24), to: note(pitch + 24), start: i * beat, duration: 0.1, gain: 0.025 }));
+    }
+    return () => notes.forEach((osc) => {
+      try {
+        osc?.stop();
+      } catch {
+        // Sudah berhenti.
+      }
+    });
+  },
+  /** Suara hujan: desis lembut yang berulang. Mengembalikan fungsi untuk menghentikannya. */
+  rain(seconds = 12) {
+    const ctx = audio();
+    if (!ctx) return () => {};
+    const buffer = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+    const band = ctx.createBiquadFilter();
+    band.type = 'lowpass';
+    band.frequency.value = 1400;
+    const amp = ctx.createGain();
+    amp.gain.setValueAtTime(0.0001, ctx.currentTime);
+    amp.gain.linearRampToValueAtTime(0.09, ctx.currentTime + 1);
+    amp.gain.setValueAtTime(0.09, ctx.currentTime + seconds - 1.5);
+    amp.gain.linearRampToValueAtTime(0.0001, ctx.currentTime + seconds);
+    source.connect(band);
+    band.connect(amp);
+    amp.connect(output(ctx));
+    source.start();
+    source.stop(ctx.currentTime + seconds + 0.1);
+    return () => {
+      try {
+        source.stop();
+      } catch {
+        // Sudah berhenti.
+      }
+    };
   },
   hello() {
     tone({ type: 'triangle', from: 480, to: 660, duration: 0.14, gain: 0.1 });

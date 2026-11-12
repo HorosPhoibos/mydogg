@@ -43,7 +43,9 @@ function pushTube(out, points, radiusAt, segments, radial) {
 
     const t = i / segments;
     const radius = radiusAt(t);
-    for (let k = 0; k < radial; k++) {
+    // Satu titik ekstra di akhir keliling (sama posisinya dengan titik pertama) supaya
+    // koordinat tekstur keliling berjalan mulus 0..1 tanpa sambungan terbalik.
+    for (let k = 0; k <= radial; k++) {
       const angle = (k / radial) * Math.PI * 2;
       const cx = Math.cos(angle);
       const cy = Math.sin(angle);
@@ -60,12 +62,13 @@ function pushTube(out, points, radiusAt, segments, radial) {
     }
   });
 
+  const ring = radial + 1;
   for (let i = 0; i < segments; i++) {
     for (let k = 0; k < radial; k++) {
-      const a = base + i * radial + k;
-      const b = base + i * radial + ((k + 1) % radial);
-      const c = a + radial;
-      const d = b + radial;
+      const a = base + i * ring + k;
+      const b = a + 1;
+      const c = a + ring;
+      const d = b + ring;
       out.indices.push(a, c, b, b, c, d);
     }
   }

@@ -486,6 +486,45 @@ p {
   background: #f9d035;
 }
 
+.wordmark {
+  cursor: pointer;
+  user-select: none;
+}
+
+.egg-hunt {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 2px dashed var(--stitch);
+}
+
+.egg-hunt p {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.egg-hunt .egg-hint {
+  margin-top: 6px;
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.egg-track {
+  height: 8px;
+  margin-top: 6px;
+  background: var(--oat-deep);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.egg-bar {
+  width: 0;
+  height: 100%;
+  background: var(--sun);
+  border-radius: 99px;
+  transition: width 0.4s;
+}
+
 /* Gelembung obrolan */
 .bubbles {
   position: fixed;
@@ -596,16 +635,16 @@ p {
   white-space: nowrap;
 }
 
-.is-shooting .bye-bar {
+[data-screen='photo'] .bye-bar {
   display: block;
 }
 
-.is-shooting .panel,
-.is-shooting .dock,
-.is-shooting .top-right,
-.is-shooting .toast,
-.is-partying .panel,
-.is-partying .dock {
+[data-screen='photo'] .panel,
+[data-screen='photo'] .dock,
+[data-screen='photo'] .top-right,
+[data-screen='photo'] .toast,
+[data-screen='party'] .panel,
+[data-screen='party'] .dock {
   display: none;
 }
 
@@ -715,6 +754,102 @@ p {
   cursor: progress;
 }
 
+/* Menu Main dan permainan */
+.games-dialog {
+  width: min(560px, calc(100vw - 2 * var(--gutter)));
+}
+
+.game-list {
+  display: grid;
+  gap: 10px;
+}
+
+.game-card {
+  display: grid;
+  gap: 2px;
+  padding: 12px 16px;
+  text-align: left;
+  background: var(--oat-deep);
+  border: 0;
+  border-radius: 12px;
+  box-shadow: 0 3px 0 #d3c29d;
+}
+
+.game-card:hover {
+  background: #e3d3b0;
+}
+
+.game-card strong {
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--teal-deep);
+}
+
+.game-card span {
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+
+.gamebar {
+  position: fixed;
+  z-index: 3;
+  left: 50%;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  display: none;
+  align-items: center;
+  gap: 14px;
+  max-width: calc(100vw - 2 * var(--gutter));
+  padding: 8px 8px 8px 18px;
+  font-weight: 600;
+  background: var(--oat);
+  border-radius: 14px;
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.2);
+  transform: translateX(-50%);
+}
+
+.gamebar .big {
+  flex: none;
+  padding: 0 16px;
+}
+
+[data-screen='game'] .gamebar {
+  display: flex;
+}
+
+.gamebar span {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 760px) {
+  .gamebar {
+    width: calc(100vw - 2 * var(--gutter));
+    font-size: 14px;
+  }
+}
+
+[data-screen='game'] .panel,
+[data-screen='game'] .dock {
+  display: none;
+}
+
+/* Suasana gelap saat disko */
+[data-game='disco'] {
+  --bg-a: #3a2458;
+  --bg-b: #24163c;
+  --bg-c: #160d26;
+  --on-bg: #f8f0dd;
+}
+
+/* Langit mendung saat hujan */
+[data-weather='rain'] {
+  --bg-a: #9fb3c4;
+  --bg-b: #7d93a6;
+  --bg-c: #637a8e;
+  --on-bg: #f8f0dd;
+}
+
 /* Mode Elus */
 .petbar {
   position: fixed;
@@ -760,13 +895,13 @@ p {
   background: #e8526c;
 }
 
-.is-petting .petbar {
+[data-screen='pet'] .petbar {
   display: flex;
 }
 
-.is-petting .panel,
-.is-petting .dock,
-.is-petting .top-right {
+[data-screen='pet'] .panel,
+[data-screen='pet'] .dock,
+[data-screen='pet'] .top-right {
   display: none;
 }
 

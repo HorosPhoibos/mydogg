@@ -4,7 +4,6 @@ import * as THREE from 'three';
 import { knitBall } from '../yarn/loft.js';
 
 const RADIUS = 0.085;
-const GRAVITY = 5.2;
 
 export function createBall(quality) {
   const paint = ({ row }) => {
@@ -20,6 +19,7 @@ export function createBall(quality) {
   const spin = new THREE.Quaternion();
   const up = new THREE.Vector3(0, 1, 0);
 
+  let gravity = 5.2;
   let limitX = 2.2;
   let limitZ = 1.5;
 
@@ -33,6 +33,9 @@ export function createBall(quality) {
     get resting() {
       return mesh.position.y <= RADIUS + 0.002 && velocity.lengthSq() < 0.02;
     },
+    setGravity(value) {
+      gravity = value;
+    },
     setLimits(world) {
       limitX = world.halfX - RADIUS - 0.05;
       limitZ = world.halfZ - RADIUS - 0.05;
@@ -44,7 +47,7 @@ export function createBall(quality) {
       mesh.position.set(from.x, from.y, from.z);
       velocity.set(
         (x - from.x) / duration,
-        (RADIUS - from.y + 0.5 * GRAVITY * duration * duration) / duration,
+        (RADIUS - from.y + 0.5 * gravity * duration * duration) / duration,
         (z - from.z) / duration,
       );
     },
@@ -55,7 +58,7 @@ export function createBall(quality) {
     },
     update(dt) {
       if (!mesh.visible) return;
-      velocity.y -= GRAVITY * dt;
+      velocity.y -= gravity * dt;
       mesh.position.addScaledVector(velocity, dt);
 
       if (mesh.position.y < RADIUS) {
